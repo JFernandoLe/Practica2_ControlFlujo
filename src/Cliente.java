@@ -1,100 +1,72 @@
-import javax.swing.*;
 import java.net.*;
 import java.io.*;
-import java.nio.file.Path;
-import java.util.Arrays;
+import javax.swing.JFileChooser;
 
-/**
- *
- * @author axele
- */
 public class Cliente {
+    private static final int WINDOW_SIZE = 5; //Tamaño de ventana
 
     public static void main(String[] args) {
         try {
-            int pto = 1234;
+            int pto = 8000;
             String dir = "127.0.0.1";
-            InetAddress dst = InetAddress.getByName(dir);
-            int tam = 10, x = 0;
-            BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
             DatagramSocket cl = new DatagramSocket();
-            while (true) {
-                x = 0;
-                JFileChooser jf=new JFileChooser();
-                int r=jf.showOpenDialog(null);
-                jf.setRequestFocusEnabled(true);
-                if(r==JFileChooser.APPROVE_OPTION){
-                    File f=jf.getSelectedFile();
-                    String nombre=f.getName();
-                    String path=f.getAbsolutePath();
-                    long size=f.length();
-                    System.out.println("Preparandose para enviar archivo "+path+" de "+tam+" bytes\n\n");
-                    DataInputStream dis=new DataInputStream(new FileInputStream(path));
-                    if (size > tam) {
+            System.out.println("Conexión establecida.. Escoja un archivo para enviar...");
+            JFileChooser jf = new JFileChooser();
+            int r = jf.showOpenDialog(null);
+            if (r == JFileChooser.APPROVE_OPTION) {
+                File f = jf.getSelectedFile();
+                String nombre = f.getName();
+                String path = f.getAbsolutePath();
+                long tam = f.length();
+                System.out.println("Preparándose para enviar archivo " + path + " de " + tam + " bytes\n\n");
 
-                        int tp = (int) (size / tam);
+                // Enviar nombre y tamaño del archivo
+                byte[] nombreBytes = nombre.getBytes(); //Convertimos el nombre del archivo en un arreglo de bytes
+                DatagramPacket p = new DatagramPacket(nombreBytes, nombreBytes.length, InetAddress.getByName(dir), pto);
+                cl.send(p); //Enviamos el nombre
+                byte[] tamBytes = String.valueOf(tam).getBytes(); //Convertimos el tamaño del archivo en un arreglo de bytes
+                p = new DatagramPacket(tamBytes, tamBytes.length, InetAddress.getByName(dir), pto);
+                cl.send(p); //Enviamos el tamaño
 
-                        for (int j = 0; j < tp; j++) {
+                DataInputStream dis = new DataInputStream(new FileInputStream(path));
+                long enviados = 0;
+                int l = 0, porcentaje = 0, base = 0, numSeqSig = 0;
+                byte[][] window = new byte[WINDOW_SIZE][]; //Es un arreglo que almacena los paquetes que se han enviado pero aún no han recibido confirmación (ACK)
 
-                            x++; //Nuestro contador
-                            byte[] tmp = Arrays.copyOfRange(b, j * tam, ((j * tam) + (tam)));
-                            //Creamos un nuevo arreglo que contendrá el número de paquete
-                            byte[] tmpConContador=new byte[tmp.length+1];
-                            System.arraycopy(tmp, 0, tmpConContador,0,tmp.length);
-                            tmpConContador[tmp.length]=(byte)x;
+                while (enviados < tam) {
+                    while (numSeqSig < base + WINDOW_SIZE && enviados < tam) {
 
-                            //System.out.println("Paquete:"+x+", bytes enviados: "+tmp.length);
-                            DatagramPacket p = new DatagramPacket(tmpConContador, tmpConContador.length, dst, pto);
-                            cl.send(p);
-                            System.out.println("Enviando fragmento " + x + "\ndesde:" + (j * tam) + " hasta " + ((j * tam) + (tam - 1)));
-                            DatagramPacket p1 = new DatagramPacket(new byte[tam], tam);
-                            cl.receive(p1);
-                            byte[] bp1 = p1.getData();
-                            for (int i = 0; i < tam; i++) {
-                                //System.out.println((j*tam)+i+"->"+tmp[i]);
-                                b_eco[(j * tam) + i] = bp1[i];
-                            }//for
-                        }//for
-                        if (b.length % tam > 0) { //bytes sobrantes
-                            //tp=tp+1;
-                            x++;
-                            int sobrantes = b.length % tam;
-                            System.out.println("sobrantes:" + sobrantes);
-                            //System.out.println("paquete: " + x + "  b:" + b.length + "ultimo pedazo desde " + tp * tam + " hasta " + ((tp * tam) + sobrantes - 1));
-                            byte[] tmp = Arrays.copyOfRange(b, tp * tam, ((tp * tam) + sobrantes));
-                            //Creamos un nuevo arreglo que contendrá el número de paquete
-                            byte[] tmpConContador=new byte[tmp.length+1];
-                            System.arraycopy(tmp, 0, tmpConContador,0,tmp.length);
-                            tmpConContador[tmp.length]=(byte)x;
-                            //System.out.println("tmp tam "+tmp.length);
-                            DatagramPacket p = new DatagramPacket(tmpConContador, tmpConContador.length, dst, pto);
-                            cl.send(p);
-                            DatagramPacket p1 = new DatagramPacket(new byte[tam], tam);
-                            cl.receive(p1);
-                            byte[] bp1 = p1.getData();
-                            for (int i = 0; i < sobrantes; i++) {
-                                // System.out.println((tp*tam)+i+"->"+i);
-                                b_eco[(tp * tam) + i] = bp1[i];
-                            }//for
-                        }//if
-
-                        String eco = new String(b_eco);
-                        System.out.println("Eco recibido: " + eco);
-                    } else {
-                        DatagramPacket p = new DatagramPacket(b, b.length, dst, pto);
+                        byte[] b = new byte[1500];
+                        l = dis.read(b);
+                        if (l == -1) break; // Cuando l es igual a -1, significa que ya se terminó de leer el archivo
+                        // Crear un arreglo de bytes que contenga el número de secuencia y los datos del archivo
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        DataOutputStream dos = new DataOutputStream(baos);
+                        // Escribir el número de secuencia seguido de los datos del archivo
+                        dos.writeInt(numSeqSig); // Enviar el número de secuencia como entero
+                        dos.write(b, 0, l); // Escribir los datos del archivo
+                        byte[] packetData = baos.toByteArray(); // Convertir todo a un arreglo de bytes
+                        // Enviar el paquete con número de secuencia incluido
+                        p = new DatagramPacket(packetData, packetData.length, InetAddress.getByName(dir), pto);
                         cl.send(p);
-                        DatagramPacket p1 = new DatagramPacket(new byte[65535], 65535);
-                        cl.receive(p1);
-                        String eco = new String(p1.getData(), 0, p1.getLength());
-                        System.out.println("Eco recibido: " + eco);
-                    }//else
-
+                        System.out.println("Paquete enviado: " + numSeqSig);
+                        enviados += l;
+                        numSeqSig++;
+                    }
+                    byte[] ack = new byte[4]; //El número de secuencia que estamos enviando o recibiendo se representa como un entero, por lo que necesitamos un arreglo de 4 bytes para almacenar ese número completo.
+                    DatagramPacket ackPacket = new DatagramPacket(ack, ack.length);
+                    cl.receive(ackPacket); //Nos quedamos a la espera del paquete con el acuse
+                    int ackNum = new DataInputStream(new ByteArrayInputStream(ack)).readInt(); //Leemos del paquete el acuse y lo leemos como entero
+                    System.out.println("ACK recibido: " + ackNum);
+                    base = ackNum + 1; //Dado que ya se recibió un acuse, podemos ampliar la base de la ventana
                 }
 
-
-            }//while
+                System.out.println("\nArchivo enviado.. ");
+                dis.close();
+                cl.close();
+            }
         } catch (Exception e) {
             e.printStackTrace();
-        }//catch
-    }//main
+        }
+    }
 }
