@@ -1,5 +1,7 @@
+import javax.swing.*;
 import java.net.*;
 import java.io.*;
+import java.nio.file.Path;
 import java.util.Arrays;
 
 /**
@@ -18,23 +20,22 @@ public class Cliente {
             DatagramSocket cl = new DatagramSocket();
             while (true) {
                 x = 0;
-                System.out.println("Escribe un mensaje, <Enter> para enviar, \"salir\" para terminar");
-                String msj = br.readLine();
-                if (msj.compareToIgnoreCase("salir") == 0) {
-                    System.out.println("termina programa");
-                    br.close();
-                    cl.close();
-                    System.exit(0);
-                } else {
-                    byte[] b = msj.getBytes();
-                    if (b.length > tam) {
-                        byte[] b_eco = new byte[b.length];
-                        //System.out.println("b_eco: "+b_eco.length+" bytes");
-                        int tp = (int) (b.length / tam);
-                        //                  if(b.length%tam>0)
-                        //                      tp=tp+1;
+                JFileChooser jf=new JFileChooser();
+                int r=jf.showOpenDialog(null);
+                jf.setRequestFocusEnabled(true);
+                if(r==JFileChooser.APPROVE_OPTION){
+                    File f=jf.getSelectedFile();
+                    String nombre=f.getName();
+                    String path=f.getAbsolutePath();
+                    long size=f.length();
+                    System.out.println("Preparandose para enviar archivo "+path+" de "+tam+" bytes\n\n");
+                    DataInputStream dis=new DataInputStream(new FileInputStream(path));
+                    if (size > tam) {
+
+                        int tp = (int) (size / tam);
+
                         for (int j = 0; j < tp; j++) {
-                            //byte[] tmp = new byte[tam];
+
                             x++; //Nuestro contador
                             byte[] tmp = Arrays.copyOfRange(b, j * tam, ((j * tam) + (tam)));
                             //Creamos un nuevo arreglo que contendrá el número de paquete
@@ -87,7 +88,10 @@ public class Cliente {
                         String eco = new String(p1.getData(), 0, p1.getLength());
                         System.out.println("Eco recibido: " + eco);
                     }//else
-                }//else
+
+                }
+
+
             }//while
         } catch (Exception e) {
             e.printStackTrace();
